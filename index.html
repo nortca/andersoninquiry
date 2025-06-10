@@ -57,14 +57,14 @@
         // --- Form Field Definitions ---
         const formFields = [
             { id: 'scenarioTitle', label: 'Scenario Title', type: 'text' },
-            { id: 'absorb', label: 'Absorb', description: "Existing knowledge of a context is acknowledged..." },
-            { id: 'ask', label: 'Ask', description: "Questions are formulated that, if answered, will help close the knowledge gap..." },
-            { id: 'accumulate', label: 'Accumulate', description: "Methods are described and implemented to collect data..." },
-            { id: 'access', label: 'Access', description: "Data that were accumulated are retrieved from where they are stored..." },
-            { id: 'analyze', label: 'Analyze', description: "Analysis of the retrieved data is conducted..." },
-            { id: 'answer', label: 'Answer', description: "Respond to the questions that were posed in the Ask stage..." },
-            { id: 'announce', label: 'Announce', description: "The answers are communicated to appropriate stakeholders..." },
-            { id: 'apply', label: 'Apply', description: "Decisions are made based on the answers..." },
+            { id: 'absorb', label: 'Absorb', description: "Existing knowledge of a context is acknowledged, and a knowledge gap (i.e., a need to know more about something) is identified. Guiding questions: What is already known about the context? What is the knowledge gap that needs to be filled? (i.e., What is not known but should be known about the context?) Why is it important to fill the knowledge gap?" },
+            { id: 'ask', label: 'Ask', description: "Questions are formulated that, if answered, will help close the knowledge gap that was identified in the Absorb stage. Guiding question: What questions, if answered, could be formulated to help fill the knowledge gap identified in the Absorb stage?" },
+            { id: 'accumulate', label: 'Accumulate', description: "Methods are described and implemented to collect quantitative and/or qualitative data that may be analyzed to answer the question(s) posed in the Ask stage. Guiding questions: What data could help answer the questions posed in the Ask stage? Do the data need to be collected or have they already been collected? When and where are the data collected? What instrument is utilized to collect the data? What is the procedure for collecting the data?" },
+            { id: 'access', label: 'Access', description: "Data that were accumulated are retrieved from where they are stored or otherwise available in preparation for analysis. Guiding questions: Where are the data stored and retrieved after they have been collected in the Accumulate stage? What is the procedure for retrieving the data in preparation for analysis?" },
+            { id: 'analyze', label: 'Analyze', description: "Analysis of the retrieved data is conducted. Guiding questions: What quantitative and/or qualitative data analysis methods are implemented to analyze the data that were retrieved in the Access stage? What tools are required to analyze the data?" },
+            { id: 'answer', label: 'Answer', description: "Respond to the questions that were posed in the Ask stage based on the analysis of the data that was conducted in the Analyze stage and interpret limitations and implications of the answers. Guiding questions: What are the answers to the questions that were posed in the Ask stage, based on the analysis of the data that was conducted in the Analyze stage? How do the answers relate to what is already known about the context (e.g., the existing knowledge about the context that was identified in the Absorb stage)? What are limitations of the answers? What are implications of the answers?" },
+            { id: 'announce', label: 'Announce', description: "The answers (i.e., data analysis results), along with applicable potential implications and limitations, are communicated to appropriate stakeholders. Guiding questions: Which stakeholders may benefit by being informed about the results that were revealed in the Answer stage? Which answers, limitations, and implications are important to communicate to each stakeholder? What is the procedure for disseminating the results to, and/or discussing the results with, the stakeholders?" },
+            { id: 'apply', label: 'Apply', description: "Decisions are made based on the answers, limitations and implications of the answers, and applicable discussions among stakeholders. Guiding questions: What decisions or actions are informed by the results that were revealed in the Answer stage? Why are the decisions or actions important to implement? What cautions are considered when making decisions or taking actions based on the results?" },
             { id: 'comments', label: 'Comments', description: "Provide additional comments if needed." },
         ];
         const initialFormState = formFields.reduce((acc, field) => ({ ...acc, [field.id]: '' }), {});
@@ -184,18 +184,12 @@
             const [isGenerating, setIsGenerating] = useState(false);
             const [error, setError] = useState(null);
             const [isEditingNarrative, setIsEditingNarrative] = useState(false);
-            
             const handleGenerateNarrative = async (narrativeType) => {
                 setIsGenerating(true);
                 setError(null);
                 let prompt;
                 if (narrativeType === 'A+') {
-                     // --- MODIFIED PROMPT ---
-                     prompt = `You are an expert in educational and research methodologies. Your task is to synthesize a set of structured answers from the "A+ Inquiry" framework into a cohesive narrative report. For each stage of the A+ Inquiry framework, use the stage name as a bold heading. Under each heading, rewrite the user's provided point for that stage into a well-formed, narrative paragraph. If a stage has no response, state "No response was provided for this stage." The overall tone should be professional and clear. Here are the user's responses for the scenario titled "${item.scenarioTitle || 'Untitled'}":\n\n` + 
-                                    formFields
-                                        .filter(field => field.id !== 'scenarioTitle' && field.id !== 'comments') // Exclude title and comments from the main body
-                                        .map(field => `**${field.label}:**\n${item[field.id] || 'No response was provided for this stage.'}`)
-                                        .join('\n\n');
+                     prompt = `You are an expert in educational and research methodologies. Your task is to synthesize a set of structured answers from the "A+ Inquiry" framework into a cohesive narrative report. For each stage of the A+ Inquiry framework, use the stage name as a bold heading. Under each heading, rewrite the user's provided point for that stage into a well-formed, narrative paragraph. If a stage has no response, state "No response was provided for this stage." The overall tone should be professional and clear. Here are the user's responses for the scenario titled "${item.scenarioTitle || 'Untitled'}":\n\n` + formFields.filter(field => field.id !== 'scenarioTitle' && field.id !== 'comments').map(field => `**${field.label}:**\n${item[field.id] || 'No response was provided for this stage.'}`).join('\n\n');
                 } else if (narrativeType === 'Traditional') {
                     prompt = `You are an expert in academic writing. Your task is to convert a set of structured answers from a planning exercise into a traditional research paper format. Use the following bold headings: **Introduction**, **Methods**, **Results**, and **Discussion**.
 - For the **Introduction**, synthesize the following points about the background knowledge and the questions being asked.
