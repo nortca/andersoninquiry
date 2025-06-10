@@ -238,3 +238,73 @@
                     setError("Could not delete the scenario.");
                 }
             };
+
+            const handleOpenFormModal = (item, stageId = null) => {
+                setEditingItem(item);
+                setFocusOnFieldId(stageId);
+                setIsFormModalOpen(true);
+            };
+
+            const handleCloseFormModal = () => {
+                setIsFormModalOpen(false);
+                setEditingItem(null);
+                setFocusOnFieldId(null);
+            };
+
+            const selectedScenario = selectedScenarioId ? userSubmissions.find(s => s.id === selectedScenarioId) : null;
+
+            if (isLoading) return createElement(LoadingSpinner, { message: "Connecting to the database..." });
+            if (error) return createElement('div', { className: "flex justify-center items-center h-screen bg-red-50 text-red-700 font-semibold p-4" }, error);
+
+            return createElement('div', { className: "min-h-screen bg-gray-100" },
+                createElement('header', { className: "bg-white shadow-sm sticky top-0 z-20" },
+                    createElement('div', { className: "container mx-auto px-6 py-4 flex justify-between items-center" },
+                        createElement('div', {className: "flex items-center gap-4"},
+                            createElement('h1', { className: "text-2xl font-bold text-gray-800" }, "A+ Inquiry Scenario Builder"),
+                            createElement('select', {
+                                className: "w-64 border border-gray-300 rounded-md py-2 px-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 truncate",
+                                value: selectedScenarioId,
+                                onChange: (e) => setSelectedScenarioId(e.target.value)
+                            },
+                                createElement('option', { value: "" }, "Select a Scenario..."),
+                                ...userSubmissions.map(scenario => 
+                                    createElement('option', { key: scenario.id, value: scenario.id }, scenario.scenarioTitle || "Untitled")
+                                )
+                            )
+                        ),
+                        createElement('div', { className: 'flex items-center gap-2' },
+                            createElement(Button, { onClick: () => handleOpenFormModal(null), className: "bg-blue-600 hover:bg-blue-700 text-white" }, "New"),
+                            createElement(Button, { onClick: () => setIsHelpModalOpen(true), className: "bg-gray-200 hover:bg-gray-300 text-gray-800 p-2" }, 
+                                createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-6 w-6', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                                    createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' })
+                                )
+                            )
+                        )
+                    )
+                ),
+                createElement('main', { className: "container mx-auto p-6" },
+                    selectedScenario
+                        ? createElement(ScenarioCard, { 
+                            key: selectedScenario.id, 
+                            item: selectedScenario,
+                            onEdit: handleOpenFormModal,
+                            onDelete: (id) => { setItemToDelete(id); setIsDeleteModalOpen(true); }
+                         })
+                         : createElement('div', { className: 'text-center text-gray-500 py-12' }, userSubmissions.length > 0 ? 'Select a scenario to view it.' : 'Create your first scenario by clicking "New".')
+                ),
+                createElement('footer', { className: "text-center py-4 text-gray-500 text-sm space-y-2" },
+                    createElement('p', null, "Your User ID is: ", createElement('span', { className: "font-mono bg-gray-200 p-1 rounded text-xs" }, user.uid)),
+                    createElement('p', null, 'Developed by Nathan C. Anderson. ', createElement('a', { href: "https://www.andersoninquiry.com/a-inquiry", target: "_blank", rel: "noopener noreferrer", className: "text-blue-600 hover:underline" }, 'Learn more about A+ Inquiry.'))
+                ),
+                isFormModalOpen && createPortal( /* ... Form Modal ... */ ),
+                isDeleteModalOpen && createPortal( /* ... Delete Modal ... */ ),
+                isHelpModalOpen && createElement(HelpModal, { onClose: () => setIsHelpModalOpen(false) })
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(createElement(App));
+
+    </script>
+</body>
+</html>
