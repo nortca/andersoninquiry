@@ -1,0 +1,596 @@
+// Import all necessary functions from the Firebase SDK
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, collection, addDoc, query, onSnapshot, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// Make React functions available from the window object
+const { useState, useEffect, createElement } = window.React;
+const { createPortal } = window.ReactDOM;
+
+// --- Firebase Configuration ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// --- Form Field Definitions ---
+const formFields = [
+    { id: 'scenarioTitle', label: 'Scenario Title', type: 'text' },
+    { id: 'absorb', label: 'Absorb', description: "Existing knowledge of a context is acknowledged, and a knowledge gap (i.e., a need to know more about something) is identified. Guiding questions: What is already known about the context? What is the knowledge gap that needs to be filled? (i.e., What is not known but should be known about the context?) Why is it important to fill the knowledge gap?" },
+    { id: 'ask', label: 'Ask', description: "Questions are formulated that, if answered, will help close the knowledge gap that was identified in the Absorb stage. Guiding question: What questions, if answered, could be formulated to help fill the knowledge gap identified in the Absorb stage?" },
+    { id: 'accumulate', label: 'Accumulate', description: "Methods are described and implemented to collect quantitative and/or qualitative data that may be analyzed to answer the question(s) posed in the Ask stage. Guiding questions: What data could help answer the questions posed in the Ask stage? Do the data need to be collected or have they already been collected? When and where are the data collected? What instrument is utilized to collect the data? What is the procedure for collecting the data?" },
+    { id: 'access', label: 'Access', description: "Data that were accumulated are retrieved from where they are stored or otherwise available in preparation for analysis. Guiding questions: Where are the data stored and retrieved after they have been collected in the Accumulate stage? What is the procedure for retrieving the data in preparation for analysis?" },
+    { id: 'analyze', label: 'Analyze', description: "Analysis of the retrieved data is conducted. Guiding questions: What quantitative and/or qualitative data analysis methods are implemented to analyze the data that were retrieved in the Access stage? What tools are required to analyze the data?" },
+    { id: 'answer', label: 'Answer', description: "Respond to the questions that were posed in the Ask stage based on the analysis of the data that was conducted in the Analyze stage and interpret limitations and implications of the answers. Guiding questions: What are the answers to the questions that were posed in the Ask stage, based on the analysis of the data that was conducted in the Analyze stage? How do the answers relate to what is already known about the context (e.g., the existing knowledge about the context that was identified in the Absorb stage)? What are limitations of the answers? What are implications of the answers?" },
+    { id: 'announce', label: 'Announce', description: "The answers (i.e., data analysis results), along with applicable potential implications and limitations, are communicated to appropriate stakeholders. Guiding questions: Which stakeholders may benefit by being informed about the results that were revealed in the Answer stage? Which answers, limitations, and implications are important to communicate to each stakeholder? What is the procedure for disseminating the results to, and/or discussing the results with, the stakeholders?" },
+    { id: 'apply', label: 'Apply', description: "Decisions are made based on the answers, limitations and implications of the answers, and applicable discussions among stakeholders. Guiding questions: What decisions or actions are informed by the results that were revealed in the Answer stage? Why are the decisions or actions important to implement? What cautions are considered when making decisions or taking actions based on the results?" },
+    { id: 'comments', label: 'Comments', description: "Provide additional comments if needed." },
+];
+const initialFormState = formFields.reduce((acc, field) => ({ ...acc, [field.id]: '' }), {});
+
+// --- Reusable UI Components written with React.createElement ---
+const Button = ({ onClick, children, className = '', type = 'button', disabled = false }) => createElement('button', { type, onClick, className: `font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-opacity-50 transition-colors duration-300 ${disabled ? 'bg-gray-400 cursor-not-allowed' : ''} ${className}`, disabled }, children);
+const LoadingSpinner = ({ message }) => createElement('div', { className: "flex justify-center items-center h-screen bg-gray-100" }, createElement('div', { className: "text-center" }, createElement('div', { className: "animate-spin rounded-full h-24 w-24 border-t-2 border-b-2 border-blue-600 mx-auto" }), createElement('h2', { className: "text-xl font-semibold mt-4 text-gray-700" }, message)));
+
+const InputField = ({ id, label, value, onChange, placeholder = '' }) => createElement(
+    'div', { key: id },
+    createElement('label', { htmlFor: id, className: "block text-sm font-bold text-gray-700 mb-1" }, label),
+    createElement('input', { type: "text", id, name: id, value: value || '', onChange, placeholder, className: "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500", required: true })
+);
+
+const TextareaField = ({ id, label, description, value, onChange }) => createElement(
+    'div', { key: id },
+    createElement('label', { htmlFor: id, className: "block text-sm font-bold text-gray-800 mb-1" }, label),
+    createElement('p', { className: "text-xs text-gray-500 mb-2" }, description),
+    createElement('textarea', { id, name: id, value: value || '', onChange, rows: "5", className: "w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" })
+);
+
+const DataForm = ({ onSave, initialData, onCancel, isEditMode, focusOnFieldId }) => {
+    const [formData, setFormData] = useState(initialFormState);
+
+    useEffect(() => {
+        setFormData(initialData || initialFormState);
+    }, [initialData]);
+
+    useEffect(() => {
+        if (focusOnFieldId) {
+            const element = document.getElementById(focusOnFieldId);
+            if (element) {
+                setTimeout(() => {
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    element.focus();
+                }, 100);
+            }
+        }
+    }, [focusOnFieldId]);
+
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        onSave(formData);
+    };
+
+    return createElement('form', { onSubmit: handleSubmit, className: "space-y-6" },
+        ...formFields.map(field => {
+            const props = {
+                key: field.id,
+                id: field.id,
+                label: field.label,
+                description: field.description,
+                value: formData[field.id],
+                onChange: handleChange
+            };
+            return field.type === 'text'
+                ? createElement(InputField, props)
+                : createElement(TextareaField, props);
+        }),
+        createElement('div', { className: "flex justify-end space-x-3 pt-4" },
+            createElement(Button, { onClick: onCancel, className: "bg-gray-300 hover:bg-gray-400 text-gray-800" }, "Cancel"),
+            createElement(Button, { type: "submit", className: "bg-green-600 hover:bg-green-700 text-white" }, isEditMode ? 'Update Entry' : 'Save Entry')
+        )
+    );
+};
+
+const InquiryDiagram = ({ item, onStageClick }) => {
+    const diagramStages = formFields.filter(f => !['scenarioTitle', 'comments'].includes(f.id));
+    const centerX = 200;
+    const centerY = 200;
+    const radius = 180;
+    const angleStep = 2 * Math.PI / diagramStages.length;
+
+    const polarToCartesian = (angle, r) => ({
+        x: centerX + r * Math.cos(angle),
+        y: centerY + r * Math.sin(angle)
+    });
+
+    const filledStagesCount = diagramStages.filter(stage => item[stage.id] && item[stage.id].trim() !== '').length;
+    let centerColor;
+    let textColor;
+
+    if (filledStagesCount === 0) {
+        centerColor = '#fee2e2';
+        textColor = 'text-red-800';
+    } else if (filledStagesCount === diagramStages.length) {
+        centerColor = '#dcfce7';
+        textColor = 'text-green-800';
+    } else {
+        centerColor = '#fef9c3';
+        textColor = 'text-yellow-800';
+    }
+
+
+    return createElement('svg', { viewBox: "0 0 400 400", className: "mx-auto my-4 max-w-lg" },
+        ...diagramStages.map((stage, index) => {
+            const startAngle = angleStep * index - (Math.PI / 2) - (angleStep / 2);
+            const endAngle = startAngle + angleStep;
+            const hasText = item[stage.id] && item[stage.id].trim() !== '';
+
+            const start = polarToCartesian(startAngle, radius);
+            const end = polarToCartesian(endAngle, radius);
+
+            const pathData = `M ${centerX},${centerY} L ${start.x},${start.y} A ${radius},${radius} 0 0 1 ${end.x},${end.y} Z`;
+
+            const labelAngle = startAngle + (angleStep / 2);
+            const labelPos = polarToCartesian(labelAngle, radius * 0.7);
+
+            return createElement('g', { key: stage.id, onClick: () => onStageClick(stage.id), style: { cursor: 'pointer' } },
+                createElement('path', {
+                    d: pathData,
+                    fill: hasText ? '#dcfce7' : '#fee2e2',
+                    stroke: '#fafafa',
+                    strokeWidth: '3'
+                }),
+                createElement('text', {
+                    x: labelPos.x,
+                    y: labelPos.y,
+                    textAnchor: 'middle',
+                    dy: '.3em',
+                    className: `font-semibold fill-current ${hasText ? 'text-green-800' : 'text-red-800'}`
+                }, stage.label)
+            );
+        }),
+        createElement('circle', { cx: centerX, cy: centerY, r: 70, fill: centerColor, stroke: '#fafafa', strokeWidth: '3' }),
+        createElement('text', { x: centerX, y: centerY, textAnchor: 'middle', dy: '.3em', className: `font-bold text-xl fill-current ${textColor}` }, "A+ Inquiry")
+    );
+};
+
+const HelpModal = ({ onClose }) => {
+    return createPortal(
+        createElement('div', { className: "fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-start p-4 overflow-y-auto" },
+            createElement('div', { className: "bg-white rounded-xl shadow-2xl w-full max-w-3xl transform transition-all my-8" },
+                createElement('div', { className: "flex justify-between items-center p-4 border-b" },
+                    createElement('h2', { className: "text-xl font-bold" }, 'How to Use the App'),
+                    createElement('button', { onClick: onClose, className: "text-3xl" }, '×')
+                ),
+                createElement('div', { className: 'p-6 space-y-6 text-gray-700' },
+                    createElement('div', null,
+                        createElement('h3', { className: 'text-lg font-bold text-gray-800 mb-2' }, '1. Adding and Editing Scenarios'),
+                        createElement('p', { className: 'mb-2' }, 'Click the "New" button to open a form. Fill out the fields for each stage of the A+ Inquiry process.'),
+                        createElement('p', null, 'To edit an existing scenario, select it from the dropdown, then click the yellow "Edit" button on its card, or click directly on a section of the diagram to jump to that question.')
+                    ),
+                    createElement('div', null,
+                        createElement('h3', { className: 'text-lg font-bold text-gray-800 mb-2' }, '2. Viewing a Scenario'),
+                        createElement('p', null, 'Use the "Select a Scenario..." dropdown menu at the top of the page to choose a saved scenario. Its details will appear on the page.')
+                    ),
+                    createElement('div', null,
+                        createElement('h3', { className: 'text-lg font-bold text-gray-800 mb-2' }, '3. Understanding the Diagram'),
+                        createElement('p', null, 'The diagram provides a quick overview of your scenario\'s completeness:'),
+                        createElement('ul', { className: 'list-disc list-inside ml-4 mt-2 space-y-1' },
+                            createElement('li', null, 'A pie slice is ', createElement('strong', { className: 'text-green-600' }, 'green'), ' if you have entered a response for that stage.'),
+                            createElement('li', null, 'A pie slice is ', createElement('strong', { className: 'text-red-600' }, 'red'), ' if the response is empty.'),
+                            createElement('li', null, 'The center circle shows the overall status: ', createElement('strong', { className: 'text-yellow-600' }, 'yellow'), ' for in-progress, ', createElement('strong', { className: 'text-green-600' }, 'green'), ' for complete, and ', createElement('strong', { className: 'text-red-600' }, 'red'), ' for not started.')
+                        )
+                    ),
+                    createElement('div', null,
+                        createElement('h3', { className: 'text-lg font-bold text-gray-800 mb-2' }, '4. Generating Narratives with AI'),
+                        createElement('p', null, 'Once a scenario is displayed, you will see two narrative generation buttons:'),
+                        createElement('ul', { className: 'list-disc list-inside ml-4 mt-2 space-y-1' },
+                            createElement('li', null, createElement('strong', null, 'A+ Inquiry Narrative:'), ' Creates a report using the A+ Inquiry headings (Absorb, Ask, etc.).'),
+                            createElement('li', null, createElement('strong', null, 'Traditional Narrative:'), ' Creates a report using standard research headings (Introduction, Methods, etc.).')
+                        ),
+                        createElement('p', { className: 'mt-2' }, 'After a narrative is generated, you can click "Edit Narrative" to refine the text, or "Revert to Original" to go back to your structured answers.')
+                    ),
+                    createElement('div', null,
+                        createElement('h3', { className: 'text-lg font-bold text-gray-800 mb-2' }, '5. Exporting Your Work'),
+                        createElement('p', null, 'When viewing a generated narrative, "Export to PDF" and "Export to Word" buttons will appear. Click these to download your narrative in the chosen format.')
+                    )
+                )
+            )
+        ), document.body
+    );
+};
+
+
+const ScenarioCard = ({ item, onEdit, onDelete }) => {
+    const [isNarrativeView, setIsNarrativeView] = useState(false);
+    const [narrativeText, setNarrativeText] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [error, setError] = useState(null);
+    const [isEditingNarrative, setIsEditingNarrative] = useState(false);
+
+    const handleGenerateNarrative = async (narrativeType) => {
+        setIsGenerating(true);
+        setError(null);
+
+        let prompt;
+
+        if (narrativeType === 'A+') {
+            prompt = `You are an expert in educational and research methodologies. Your task is to synthesize a set of structured answers from the "A+ Inquiry" framework into a cohesive narrative report. For each stage of the A+ Inquiry framework (e.g., Absorb, Ask, Accumulate), use the stage name as a bold heading. Under each heading, rewrite the user's provided point for that stage into a well-formed, narrative paragraph. Do not simply copy the user's text. The overall tone should be professional and clear. Here are the user's responses for the scenario titled "${item.scenarioTitle || 'Untitled'}":\n\n` +
+                formFields
+                    .filter(field => field.id !== 'scenarioTitle' && item[field.id])
+                    .map(field => `**${field.label}:**\n${item[field.id]}`)
+                    .join('\n\n');
+    } else if (narrativeType === 'Traditional') {
+        prompt = `You are an expert in academic writing. Your task is to convert a set of structured answers from a planning exercise into a traditional research paper format. Use the following bold headings: **Introduction**, **Methods**, **Results**, and **Discussion**.
+
+- For the **Introduction**, synthesize the following points about the background knowledge and the questions being asked.
+- For the **Methods**, synthesize the following points about data collection, access, and analysis.
+- For the **Results**, use the following point about the answer found.
+- For the **Discussion**, synthesize the following points about communicating the findings and applying them.
+
+Rewrite the user's points under each heading into well-formed, narrative paragraphs. The tone should be formal and academic. Here is the user's raw input for the scenario titled "${item.scenarioTitle || 'Untitled'}":
+
+**Material for Introduction:**
+${item.absorb || ''}
+${item.ask || ''}
+
+**Material for Methods:**
+${item.accumulate || ''}
+${item.access || ''}
+${item.analyze || ''}
+
+**Material for Results:**
+${item.answer || ''}
+
+**Material for Discussion:**
+${item.announce || ''}
+${item.apply || ''}`;
+        }
+
+
+        try {
+            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`API request failed with status ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const text = result.candidates[0].content.parts[0].text;
+                setNarrativeText(text);
+                setIsNarrativeView(true);
+                setIsEditingNarrative(false);
+            } else {
+                throw new Error("Invalid response structure from API.");
+            }
+
+        } catch (e) {
+            console.error("Narrative generation error:", e);
+            setError("Failed to generate narrative. Please try again.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleExportPDF = () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 15;
+        let y = margin + 15;
+
+        doc.setFontSize(18);
+        doc.text(item.scenarioTitle || 'Scenario Narrative', margin, y);
+        y += 10;
+
+        doc.setFontSize(12);
+        const splitText = doc.splitTextToSize(narrativeText, doc.internal.pageSize.getWidth() - margin * 2);
+
+        splitText.forEach(line => {
+            if (y > pageHeight - margin) {
+                doc.addPage();
+                y = margin;
+            }
+            doc.text(line, margin, y);
+            y += 7;
+        });
+
+        doc.save((item.scenarioTitle || 'narrative') + '.pdf');
+    };
+
+    const handleExportWord = () => {
+        const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>${item.scenarioTitle || 'Scenario Narrative'}</title></head><body>`;
+        const footer = "</body></html>";
+        const htmlContent = header + `<h1>${item.scenarioTitle || 'Scenario Narrative'}</h1><p>${narrativeText.replace(/\n/g, '<br />')}</p>` + footer;
+
+        const blob = new Blob(['\ufeff', htmlContent], {
+            type: 'application/msword'
+        });
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        document.body.appendChild(link);
+        link.href = url;
+        link.download = `${item.scenarioTitle || 'narrative'}.doc`;
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const renderCardContent = () => {
+        if (isNarrativeView) {
+            if (isEditingNarrative) {
+                return createElement('textarea', {
+                    className: "w-full p-2 border border-gray-300 rounded-md shadow-sm h-96",
+                    value: narrativeText,
+                    onChange: (e) => setNarrativeText(e.target.value)
+                });
+            }
+            return createElement('p', { className: "text-gray-800 whitespace-pre-wrap" }, narrativeText);
+        }
+
+        return formFields
+            .filter(f => f.id !== 'scenarioTitle')
+            .map(f => {
+                const hasText = item[f.id] && item[f.id].trim() !== '';
+                return createElement('div', { key: f.id, className: "mb-4" },
+                    createElement('p', { className: "font-bold text-gray-700" }, f.label),
+                    createElement('p', {
+                        className: hasText ? "text-gray-600 whitespace-pre-wrap" : "text-gray-400 italic whitespace-pre-wrap"
+                    }, hasText ? item[f.id] : 'No response entered.')
+                )
+            });
+    };
+
+    const renderActionButtons = () => {
+        const buttons = [];
+
+        if (isGenerating) {
+            buttons.push(createElement('p', { key: 'gen', className: 'text-sm text-gray-500' }, "Generating..."));
+        } else {
+            buttons.push(createElement(Button, { key: 'generate-aplus', onClick: () => handleGenerateNarrative('A+'), className: "bg-purple-600 hover:bg-purple-700 text-white text-sm py-1 px-3" }, "A+ Inquiry Narrative"));
+            buttons.push(createElement(Button, { key: 'generate-trad', onClick: () => handleGenerateNarrative('Traditional'), className: "bg-teal-600 hover:bg-teal-700 text-white text-sm py-1 px-3" }, "Traditional Narrative"));
+        }
+
+        if (isNarrativeView) {
+            if (isEditingNarrative) {
+                buttons.push(createElement(Button, { key: 'save-narrative', onClick: () => setIsEditingNarrative(false), className: "bg-green-600 hover:bg-green-700 text-white text-sm py-1 px-3" }, "Save Narrative"));
+            } else {
+                buttons.push(createElement(Button, { key: 'export-pdf', onClick: handleExportPDF, className: "bg-red-500 hover:bg-red-600 text-white text-sm py-1 px-3" }, "Export PDF"));
+                buttons.push(createElement(Button, { key: 'export-word', onClick: handleExportWord, className: "bg-blue-700 hover:bg-blue-800 text-white text-sm py-1 px-3" }, "Export Word"));
+                buttons.push(createElement(Button, { key: 'edit-narrative', onClick: () => setIsEditingNarrative(true), className: "bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 px-3" }, "Edit Narrative"));
+            }
+            buttons.push(createElement(Button, { key: 'revert', onClick: () => { setIsNarrativeView(false); setIsEditingNarrative(false); }, className: "bg-gray-500 hover:bg-gray-600 text-white text-sm py-1 px-3" }, "Revert to Original"));
+        }
+
+        buttons.push(createElement(Button, { key: 'edit', onClick: () => onEdit(item), className: "bg-yellow-500 hover:bg-yellow-600 text-white text-sm py-1 px-3" }, "Edit"));
+        buttons.push(createElement(Button, { key: 'delete', onClick: () => onDelete(item.id), className: "bg-red-600 hover:bg-red-700 text-white text-sm py-1 px-3" }, "Delete"));
+
+        return buttons;
+    };
+
+    return createElement('div', { className: "bg-white rounded-lg shadow-md p-6 mb-6 border" },
+        createElement('h3', { className: "text-xl font-bold text-blue-700 mb-4" }, item.scenarioTitle || 'Untitled'),
+        createElement(InquiryDiagram, { item, onStageClick: (stageId) => onEdit(item, stageId) }),
+        renderCardContent(),
+        error && createElement('p', { className: 'text-red-500 text-sm mt-2' }, error),
+        createElement('div', { className: "flex justify-end items-center flex-wrap gap-2 mt-6 border-t pt-4" }, ...renderActionButtons())
+    );
+};
+
+
+// --- Main Application Component ---
+function App({ firebaseServices }) {
+    const { auth, db } = firebaseServices;
+    const [userId, setUserId] = useState(auth.currentUser?.uid);
+    const [isAuthReady, setIsAuthReady] = useState(!!auth.currentUser);
+    const [userSubmissions, setUserSubmissions] = useState([]);
+    const [isLoadingData, setIsLoadingData] = useState(true);
+    const [error, setError] = useState(null);
+    const [selectedScenarioId, setSelectedScenarioId] = useState('');
+    const [isFormModalOpen, setIsFormModalOpen] = useState(false);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [itemToDelete, setItemToDelete] = useState(null);
+    const [editingItem, setEditingItem] = useState(null);
+    const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+    const [focusOnFieldId, setFocusOnFieldId] = useState(null);
+
+    const handleOpenFormModal = (item, stageId = null) => {
+        setEditingItem(item);
+        setFocusOnFieldId(stageId);
+        setIsFormModalOpen(true);
+    };
+
+    const handleCloseFormModal = () => {
+        setIsFormModalOpen(false);
+        setEditingItem(null);
+        setFocusOnFieldId(null);
+    };
+
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, (user) => {
+            if (user) {
+                setUserId(user.uid);
+                setIsAuthReady(true);
+            } else { setError("Authentication lost. Please refresh."); }
+        });
+        return () => unsubscribe();
+    }, [auth]);
+
+    useEffect(() => {
+        if (!isAuthReady || !userId) return;
+        setIsLoadingData(true);
+        const dataCollectionPath = `artifacts/${appId}/users/${userId}/submissions`;
+        const q = query(collection(db, dataCollectionPath));
+        const unsubscribe = onSnapshot(q, (querySnapshot) => {
+            setUserSubmissions(querySnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+            setIsLoadingData(false);
+        }, (err) => {
+            console.error("Data fetch error:", err);
+            setError("Failed to load your scenarios.");
+            setIsLoadingData(false);
+        });
+        return () => unsubscribe();
+    }, [isAuthReady, userId]);
+
+    const handleSave = async (formData) => {
+        if (!userId) return;
+        const path = `artifacts/${appId}/users/${userId}/submissions`;
+        try {
+            if (editingItem) {
+                await updateDoc(doc(db, path, editingItem.id), formData);
+            } else {
+                const docRef = await addDoc(collection(db, path), { ...formData, createdAt: new Date() });
+                setSelectedScenarioId(docRef.id);
+            }
+            handleCloseFormModal();
+        } catch (e) {
+            console.error("Save error:", e);
+            setError("Could not save the scenario.");
+        }
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!userId || !itemToDelete) return;
+        try {
+            await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/submissions`, itemToDelete));
+            if (selectedScenarioId === itemToDelete) {
+                setSelectedScenarioId('');
+            }
+            setIsDeleteModalOpen(false);
+            setItemToDelete(null);
+        } catch (e) {
+            console.error("Delete error:", e);
+            setError("Could not delete the scenario.");
+        }
+    };
+
+    const selectedScenario = selectedScenarioId ? userSubmissions.find(s => s.id === selectedScenarioId) : null;
+
+    if (error) return createElement('div', { className: "flex justify-center items-center h-screen bg-red-50 text-red-700 font-semibold p-4" }, error);
+    if (!isAuthReady) return createElement(LoadingSpinner, { message: "Finalizing Authentication..." });
+
+    return createElement('div', { className: "min-h-screen bg-gray-100" },
+        createElement('header', { className: "bg-white shadow-sm sticky top-0 z-20" },
+            createElement('div', { className: "container mx-auto px-6 py-4 flex justify-between items-center" },
+                createElement('div', { className: "flex items-center gap-4" },
+                    createElement('h1', { className: "text-2xl font-bold text-gray-800" }, "A+ Inquiry Scenario Builder"),
+                    createElement('select', {
+                        className: "w-64 border border-gray-300 rounded-md py-2 px-3 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 truncate",
+                        value: selectedScenarioId,
+                        onChange: (e) => setSelectedScenarioId(e.target.value)
+                    },
+                        createElement('option', { value: "" }, "Select a Scenario..."),
+                        ...userSubmissions.map(scenario =>
+                            createElement('option', { key: scenario.id, value: scenario.id }, scenario.scenarioTitle || "Untitled")
+                        )
+                    )
+                ),
+                createElement('div', { className: 'flex items-center gap-2' },
+                    createElement(Button, { onClick: () => handleOpenFormModal(null), className: "bg-blue-600 hover:bg-blue-700 text-white" }, "New"),
+                    createElement(Button, { onClick: () => setIsHelpModalOpen(true), className: "bg-gray-200 hover:bg-gray-300 text-gray-800 p-2" },
+                        createElement('svg', { xmlns: 'http://www.w3.org/2000/svg', className: 'h-6 w-6', fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor' },
+                            createElement('path', { strokeLinecap: 'round', strokeLinejoin: 'round', strokeWidth: 2, d: 'M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' })
+                        )
+                    )
+                )
+            )
+        ),
+        createElement('main', { className: "container mx-auto p-6" },
+            isLoadingData
+                ? createElement(LoadingSpinner, { message: "Loading your scenarios..." })
+                : selectedScenario
+                    ? createElement(ScenarioCard, {
+                        key: selectedScenario.id,
+                        item: selectedScenario,
+                        onEdit: handleOpenFormModal,
+                        onDelete: (id) => { setItemToDelete(id); setIsDeleteModalOpen(true); }
+                    })
+                    : createElement('div', { className: 'text-center text-gray-500 py-12' }, 'Select a scenario to view it, or create a new one.')
+        ),
+        createElement('footer', { className: "text-center py-4 text-gray-500 text-sm space-y-2" },
+            createElement('p', null, "Your User ID is: ", createElement('span', { className: "font-mono bg-gray-200 p-1 rounded text-xs" }, userId)),
+            createElement('p', null,
+                'Developed by Nathan C. Anderson. ',
+                createElement('a', {
+                    href: "https://www.andersoninquiry.com/a-inquiry",
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    className: "text-blue-600 hover:underline"
+                }, 'Learn more about A+ Inquiry.')
+            )
+        ),
+        isFormModalOpen && createPortal(
+            createElement('div', { className: "fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-start p-4 overflow-y-auto" },
+                createElement('div', { className: "bg-white rounded-xl shadow-2xl w-full max-w-2xl transform transition-all my-8" },
+                    createElement('div', { className: "flex justify-between items-center p-4 border-b" },
+                        createElement('h2', { className: "text-xl font-bold" }, editingItem ? 'Edit Scenario' : 'Create New Scenario'),
+                        createElement('button', { onClick: handleCloseFormModal, className: "text-3xl" }, '×')
+                    ),
+                    createElement('div', { className: 'p-6' },
+                        createElement(DataForm, {
+                            onSave: handleSave,
+                            initialData: editingItem,
+                            onCancel: handleCloseFormModal,
+                            isEditMode: !!editingItem,
+                            focusOnFieldId: focusOnFieldId
+                        })
+                    )
+                )
+            ), document.body
+        ),
+        isDeleteModalOpen && createPortal(
+            createElement('div', { className: "fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center" },
+                createElement('div', { className: "bg-white rounded-xl p-6" },
+                    createElement('h3', { className: "text-lg font-bold" }, "Confirm Deletion"),
+                    createElement('p', { className: "my-4" }, "Are you sure? This cannot be undone."),
+                    createElement('div', { className: "flex justify-end space-x-3" },
+                        createElement(Button, { onClick: () => setIsDeleteModalOpen(false), className: "bg-gray-300 text-gray-800" }, "Cancel"),
+                        createElement(Button, { onClick: handleDeleteConfirm, className: "bg-red-600 text-white" }, "Delete")
+                    )
+                )
+            ), document.body
+        ),
+        isHelpModalOpen && createElement(HelpModal, { onClose: () => setIsHelpModalOpen(false) })
+    );
+}
+
+async function main() {
+    const rootElement = document.getElementById('root');
+    const root = ReactDOM.createRoot(rootElement);
+
+    root.render(createElement(LoadingSpinner, { message: "Initializing..." }));
+
+    if (!firebaseConfig) {
+        root.render(createElement('div', null, 'Error: Firebase configuration is missing.'));
+        return;
+    }
+
+    try {
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        await signInAnonymously(auth);
+        root.render(createElement(App, { firebaseServices: { auth, db } }));
+    } catch (error) {
+        console.error("Critical Initialization Error:", error);
+        root.render(createElement('div', { className: "p-4 text-center text-red-700 bg-red-100" }, `Critical Error: Could not start the application. ${error.message}`));
+    }
+}
+
+main();
