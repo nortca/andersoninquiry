@@ -8,7 +8,15 @@ const { useState, useEffect, createElement } = window.React;
 const { createPortal } = window.ReactDOM;
 
 // --- Firebase Configuration ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+const firebaseConfig = {
+  apiKey: "AIzaSyBwqmfFw8h8aA05tRGA5HuC-h0FGZ2Sb68",
+  authDomain: "a-plus-inquiry-scenario-8b0c2.firebaseapp.com",
+  projectId: "a-plus-inquiry-scenario-8b0c2",
+  storageBucket: "a-plus-inquiry-scenario-8b0c2.firebasestorage.app",
+  messagingSenderId: "383121563246",
+  appId: "1:383121563246:web:f657d10d1e9dceb7c9507f",
+  measurementId: "G-NT839083TS"
+};
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Form Field Definitions ---
