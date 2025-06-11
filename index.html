@@ -184,6 +184,7 @@
             const [isGenerating, setIsGenerating] = useState(false);
             const [error, setError] = useState(null);
             const [isEditingNarrative, setIsEditingNarrative] = useState(false);
+            
             const handleGenerateNarrative = async (narrativeType) => {
                 setIsGenerating(true);
                 setError(null);
@@ -312,7 +313,6 @@ ${item.apply || ''}`;
             );
         };
         
-
         // --- Main Application Component ---
         function App() {
             const [authState, setAuthState] = useState({ user: null, loading: true, error: null });
@@ -360,7 +360,7 @@ ${item.apply || ''}`;
             
             const handleSave = async (formData) => {
                 if (!authState.user) return;
-                const path = `artifacts/${appId}/users/${authState.user.uid}/submissions`; // CORRECTED PATH
+                const path = `artifacts/${appId}/users/${authState.user.uid}/submissions`;
                 try {
                     if (editingItem) {
                         await updateDoc(doc(db, path, editingItem.id), formData);
